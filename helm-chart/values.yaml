@@ -1,0 +1,28 @@
+replicaCount: 2
+
+image:
+  repository: chandanvura/devops-frontend
+  tag: "v1"
+  pullPolicy: Always
+
+service:
+  type: NodePort
+  port: 80
+  targetPort: 3000
+  nodePort: 30090
+
+resources:
+  requests:
+    memory: "64Mi"
+    cpu: "250m"
+  limits:
+    memory: "128Mi"
+    cpu: "500m"
+
+app:
+  name: frontend
+  port: 3000
+
+env:
+  productServiceUrl: "http://product-service:3001"
+  orderServiceUrl: "http://order-service:3002"
