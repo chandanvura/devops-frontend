@@ -1,17 +1,33 @@
 const express = require('express');
-const axios = require('axios');
-const app = express();
-const PORT = process.env.PORT || 3000;
+const axios   = require('axios');
+const client  = require('prom-client');
+const app     = express();
+const PORT    = process.env.PORT || 3000;
 
-// Service URLs - use Kubernetes service names in cluster
-// Falls back to localhost for local development
+// Prometheus setup
+const register = new client.Registry();
+client.collectDefaultMetrics({ register });
+
+const httpRequestCounter = new client.Counter({
+  name: 'frontend_requests_total',
+  help: 'Total requests to frontend',
+  labelNames: ['method', 'route', 'status'],
+  registers: [register]
+});
+
+// Track all requests
+app.use((req, res, next) => {
+  res.on('finish', () => {
+    httpRequestCounter.inc({ method: req.method, route: req.path, status: res.statusCode });
+  });
+  next();
+});
+
 const PRODUCT_SERVICE_URL = process.env.PRODUCT_SERVICE_URL || 'http://localhost:3001';
 const ORDER_SERVICE_URL   = process.env.ORDER_SERVICE_URL   || 'http://localhost:3002';
 
-// Main dashboard page
 app.get('/', async (req, res) => {
   try {
-    // Call both services in parallel
     const [productsRes, ordersRes] = await Promise.all([
       axios.get(`${PRODUCT_SERVICE_URL}/products`),
       axios.get(`${ORDER_SERVICE_URL}/orders`)
@@ -20,7 +36,6 @@ app.get('/', async (req, res) => {
     const products = productsRes.data.data;
     const orders   = ordersRes.data.data;
 
-    // Build HTML response
     const html = `
 <!DOCTYPE html>
 <html>
@@ -61,9 +76,7 @@ app.get('/', async (req, res) => {
       <div class="card">
         <h2>Products <span class="badge">${products.length} items</span></h2>
         <table>
-          <tr>
-            <th>ID</th><th>Name</th><th>Price</th><th>Stock</th>
-          </tr>
+          <tr><th>ID</th><th>Name</th><th>Price</th><th>Stock</th></tr>
           ${products.map(p => `
           <tr>
             <td>${p.id}</td>
@@ -76,9 +89,7 @@ app.get('/', async (req, res) => {
       <div class="card">
         <h2>Orders <span class="badge">${orders.length} orders</span></h2>
         <table>
-          <tr>
-            <th>ID</th><th>Product</th><th>Qty</th><th>Total</th><th>Status</th>
-          </tr>
+          <tr><th>ID</th><th>Product</th><th>Qty</th><th>Total</th><th>Status</th></tr>
           ${orders.map(o => `
           <tr>
             <td>${o.id}</td>
@@ -106,13 +117,14 @@ app.get('/', async (req, res) => {
   }
 });
 
-// Health check
 app.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    service: 'frontend',
-    timestamp: new Date().toISOString()
-  });
+  res.json({ status: 'ok', service: 'frontend', timestamp: new Date().toISOString() });
+});
+
+// Metrics endpoint - MUST be before app.listen
+app.get('/metrics', async (req, res) => {
+  res.set('Content-Type', register.contentType);
+  res.end(await register.metrics());
 });
 
 app.listen(PORT, () => {

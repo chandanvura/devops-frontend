@@ -15,17 +15,17 @@ pipeline {
             }
         }
 
-        stage('Trivy Image Scan') {
-            steps {
-                echo 'Scanning image...'
-                bat 'C:\\Windows\\System32\\trivy.exe image --exit-code 0 --severity HIGH,CRITICAL --format table chandanvura/devops-frontend:v1 || exit 0'
-            }
-        }
-
         stage('Build Docker Image') {
             steps {
                 echo 'Building frontend image...'
                 bat 'docker build -t %IMAGE_NAME%:%IMAGE_TAG% .'
+            }
+        }
+
+        stage('Trivy Security Scan') {
+            steps {
+                echo 'Scanning frontend image...'
+                bat 'C:\\Windows\\System32\\trivy.exe image --exit-code 0 --severity LOW,MEDIUM,HIGH,CRITICAL --format table %IMAGE_NAME%:%IMAGE_TAG%'
             }
         }
 
@@ -48,7 +48,10 @@ pipeline {
     }
 
     post {
-        success { echo 'Frontend deployed!' }
+        always {
+            bat 'C:\\Windows\\System32\\trivy.exe image --exit-code 0 --severity HIGH,CRITICAL --format json --output trivy-report.json %IMAGE_NAME%:%IMAGE_TAG% || exit 0'
+        }
+        success { echo 'Frontend deployed successfully!' }
         failure { echo 'Frontend pipeline failed!' }
     }
 }
